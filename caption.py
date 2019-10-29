@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import skimage.transform
 import argparse
-from scipy.misc import imread, imresize
+# from scipy.misc import imread, imresize
+import skimage
 from PIL import Image
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -30,13 +31,14 @@ def caption_image_beam_search(encoder, decoder, image_path, word_map, beam_size=
     vocab_size = len(word_map)
 
     # Read image and process
-    img = imread(image_path)
+    img = skimage.io.imread(image_path)
     if len(img.shape) == 2:
         img = img[:, :, np.newaxis]
         img = np.concatenate([img, img, img], axis=2)
-    img = imresize(img, (256, 256))
+    # img = imresize(img, (256, 256))
+    img = skimage.transform.resize(img, (256, 256))  # automatically squeezed the range of [0, 1]
     img = img.transpose(2, 0, 1)
-    img = img / 255.
+    # img = img / 255.
     img = torch.FloatTensor(img).to(device)
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
@@ -183,6 +185,7 @@ def visualize_att(image_path, seq, alphas, rev_word_map, smooth=True):
             plt.imshow(alpha, alpha=0.8)
         plt.set_cmap(cm.Greys_r)
         plt.axis('off')
+    plt.savefig(f'caption_{args.img}')
     plt.show()
 
 
