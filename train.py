@@ -9,19 +9,27 @@ from models import Encoder, DecoderWithAttention
 from datasets import *
 from utils import *
 from nltk.translate.bleu_score import corpus_bleu
+from parameters import *
+from torch.utils.tensorboard import SummaryWriter
+import datetime
+
+record_name = str(datetime.datetime.now()).replace(' ', '_')[:-7]
 
 # Data parameters
-data_folder = '/media/ssd/caption data'  # folder with data files saved by create_input_files.py
-data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
+data_folder = './data/flickr30k_output_1_min'  # folder with data files saved by create_input_files.py
+data_name = 'flickr30k_5_cap_per_img_1_min_word_freq'  # base name shared by data files
+
+writer = SummaryWriter(f'./logs/{data_name}_{record_name}')
 
 # Model parameters
 emb_dim = 512  # dimension of word embeddings
 attention_dim = 512  # dimension of attention linear layers
 decoder_dim = 512  # dimension of decoder RNN
-dropout = 0.5
+dropout = .5
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
-device = torch.device("cuda:1")
-cudnn.benchmark = True  # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
+device = torch.device(f'cuda:{gpu_id}' if torch.cuda.is_available() else 'cpu')
+cudnn.benchmark = False  # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
+# automatically optimize algorithm
 
 # Training parameters
 start_epoch = 0
@@ -29,13 +37,13 @@ epochs = 120  # number of epochs to train for (if early stopping is not triggere
 epochs_since_improvement = 0  # keeps track of number of epochs since there's been an improvement in validation BLEU
 batch_size = 32
 workers = 1  # for data-loading; right now, only 1 works with h5py
-encoder_lr = 1e-4  # learning rate for encoder if fine-tuning
-decoder_lr = 4e-4  # learning rate for decoder
+encoder_lr = 2e-4  # learning rate for encoder if fine-tuning, 1e-4
+decoder_lr = 2e-4  # learning rate for decoder, 4e-4
 grad_clip = 5.  # clip gradients at an absolute value of
 alpha_c = 1.  # regularization parameter for 'doubly stochastic attention', as in the paper
 best_bleu4 = 0.  # BLEU-4 score right now
-print_freq = 100  # print training/validation stats every __ batches
-fine_tune_encoder = False  # fine-tune encoder?
+print_freq = 400  # print training/validation stats every __ batches
+fine_tune_encoder = True  # fine-tune encoder?
 checkpoint = None  # path to checkpoint, None if none
 
 
@@ -120,7 +128,8 @@ def main():
         recent_bleu4 = validate(val_loader=val_loader,
                                 encoder=encoder,
                                 decoder=decoder,
-                                criterion=criterion)
+                                criterion=criterion,
+                                epoch=epoch)
 
         # Check if there was an improvement
         is_best = recent_bleu4 > best_bleu4
@@ -160,7 +169,7 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
     start = time.time()
 
     # Batches
-    for i, (imgs, caps, caplens) in enumerate(train_loader):
+    for i, (imgs, caps, caplens) in enumerate(tqdm(train_loader)):
         data_time.update(time.time() - start)
 
         # Move to GPU, if available
@@ -177,8 +186,8 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
 
         # Remove timesteps that we didn't decode at, or are pads
         # pack_padded_sequence is an easy trick to do this
-        scores, _ = pack_padded_sequence(scores, decode_lengths, batch_first=True)
-        targets, _ = pack_padded_sequence(targets, decode_lengths, batch_first=True)
+        scores = pack_padded_sequence(scores, decode_lengths, batch_first=True).data
+        targets = pack_padded_sequence(targets, decode_lengths, batch_first=True).data
 
         # Calculate loss
         loss = criterion(scores, targets)
@@ -213,17 +222,21 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
 
         # Print status
         if i % print_freq == 0:
-            print('Epoch: [{0}][{1}/{2}]\t'
-                  'Batch Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                  'Data Load Time {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                  'Top-5 Accuracy {top5.val:.3f} ({top5.avg:.3f})'.format(epoch, i, len(train_loader),
-                                                                          batch_time=batch_time,
-                                                                          data_time=data_time, loss=losses,
-                                                                          top5=top5accs))
+            print(f'Epoch: [{epoch}][{i}/{len(train_loader)}]\t'
+                  f'Batch Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                  f'Data Load Time {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                  f'Loss {losses.val:.4f} ({losses.avg:.4f})\t'
+                  f'Top-5 Accuracy {top5accs.val:.3f} ({top5accs.avg:.3f})')
+
+            writer.add_scalar('train_loss_per_step', losses.avg, epoch*len(train_loader)+i)
+            writer.add_scalar('train_Top-5_Accuracy_step', top5accs.avg, epoch*len(train_loader)+i)
+
+            losses.reset()
+            top5accs.reset()
 
 
-def validate(val_loader, encoder, decoder, criterion):
+
+def validate(val_loader, encoder, decoder, criterion, epoch):
     """
     Performs one epoch's validation.
 
@@ -250,7 +263,7 @@ def validate(val_loader, encoder, decoder, criterion):
     # solves the issue #57
     with torch.no_grad():
         # Batches
-        for i, (imgs, caps, caplens, allcaps) in enumerate(val_loader):
+        for i, (imgs, caps, caplens, allcaps) in enumerate(tqdm(val_loader)):
 
             # Move to device, if available
             imgs = imgs.to(device)
@@ -268,8 +281,8 @@ def validate(val_loader, encoder, decoder, criterion):
             # Remove timesteps that we didn't decode at, or are pads
             # pack_padded_sequence is an easy trick to do this
             scores_copy = scores.clone()
-            scores, _ = pack_padded_sequence(scores, decode_lengths, batch_first=True)
-            targets, _ = pack_padded_sequence(targets, decode_lengths, batch_first=True)
+            scores = pack_padded_sequence(scores, decode_lengths, batch_first=True).data
+            targets = pack_padded_sequence(targets, decode_lengths, batch_first=True).data
 
             # Calculate loss
             loss = criterion(scores, targets)
@@ -286,11 +299,17 @@ def validate(val_loader, encoder, decoder, criterion):
             start = time.time()
 
             if i % print_freq == 0:
-                print('Validation: [{0}/{1}]\t'
-                      'Batch Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                      'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                      'Top-5 Accuracy {top5.val:.3f} ({top5.avg:.3f})\t'.format(i, len(val_loader), batch_time=batch_time,
-                                                                                loss=losses, top5=top5accs))
+                # print('Validation: [{0}/{1}]\t'
+                #       'Batch Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                #       'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                #       'Top-5 Accuracy {top5.val:.3f} ({top5.avg:.3f})\t'.format(i, len(val_loader),
+                #                                                                 batch_time=batch_time,
+                #                                                                 loss=losses, top5=top5accs))
+
+                print(f'Validation: [{i}/{len(val_loader)}]\t'
+                      f'Batch Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                      f'Loss {losses.val:.4f} ({losses.avg:.4f})\t'
+                      f'Top-5 Accuracy {top5accs.val:.3f} ({top5accs.avg:.3f})\t')
 
             # Store references (true captions), and hypothesis (prediction) for each image
             # If for n images, we have n hypotheses, and references a, b, c... for each image, we need -
@@ -319,11 +338,16 @@ def validate(val_loader, encoder, decoder, criterion):
         # Calculate BLEU-4 scores
         bleu4 = corpus_bleu(references, hypotheses)
 
-        print(
-            '\n * LOSS - {loss.avg:.3f}, TOP-5 ACCURACY - {top5.avg:.3f}, BLEU-4 - {bleu}\n'.format(
-                loss=losses,
-                top5=top5accs,
-                bleu=bleu4))
+        # print(
+        #     '\n * LOSS - {loss.avg:.3f}, TOP-5 ACCURACY - {top5.avg:.3f}, BLEU-4 - {bleu}\n'.format(
+        #         loss=losses,
+        #         top5=top5accs,
+        #         bleu=bleu4))
+
+        print(f'\n * LOSS - {losses.avg:.3f}, TOP-5 ACCURACY - {top5accs.avg:.3f}, BLEU-4 - {bleu4}\n')
+        writer.add_scalar('val_loss_per_epoch', losses.avg, epoch)
+        writer.add_scalar('val_top-5_acc_per_epoch', top5accs.avg, epoch)
+        writer.add_scalar('val_bleu4_per_epoch', bleu4, epoch)
 
     return bleu4
 

@@ -1,15 +1,13 @@
 import torch
 from torch import nn
 import torchvision
+from parameters import *
 
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cuda:1")
+device = torch.device(f'cuda:{gpu_id}' if torch.cuda.is_available() else 'cpu')
 
 
 class Encoder(nn.Module):
-    """
-    Encoder.
-    """
+    """Encoder."""
 
     def __init__(self, encoded_image_size=14):
         super(Encoder, self).__init__()
@@ -29,7 +27,6 @@ class Encoder(nn.Module):
     def forward(self, images):
         """
         Forward propagation.
-
         :param images: images, a tensor of dimensions (batch_size, 3, image_size, image_size)
         :return: encoded images
         """

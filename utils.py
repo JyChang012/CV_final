@@ -3,7 +3,8 @@ import numpy as np
 import h5py
 import json
 import torch
-from scipy.misc import imread, imresize
+# from scipy.misc import imread, imresize
+import skimage.transform
 from tqdm import tqdm
 from collections import Counter
 from random import seed, choice, sample
@@ -112,11 +113,12 @@ def create_input_files(dataset, karpathy_json_path, image_folder, captions_per_i
                 assert len(captions) == captions_per_image
 
                 # Read images
-                img = imread(impaths[i])
+                # img = imread(impaths[i])
+                img = skimage.io.imread(impaths[i])
                 if len(img.shape) == 2:
                     img = img[:, :, np.newaxis]
                     img = np.concatenate([img, img, img], axis=2)
-                img = imresize(img, (256, 256))
+                img = skimage.transform.resize(img, (256, 256), preserve_range=True).astype(np.int)
                 img = img.transpose(2, 0, 1)
                 assert img.shape == (3, 256, 256)
                 assert np.max(img) <= 255
@@ -172,7 +174,8 @@ def load_embeddings(emb_file, word_map):
     vocab = set(word_map.keys())
 
     # Create tensor to hold embeddings, initialize
-    embeddings = torch.FloatTensor(len(vocab), emb_dim)
+    # embeddings = torch.FloatTensor(len(vocab), emb_dim)
+    embeddings = torch.empty(len(vocab), emb_dim, dtype=torch.float)
     init_embedding(embeddings)
 
     # Read embedding file
@@ -187,7 +190,7 @@ def load_embeddings(emb_file, word_map):
         if emb_word not in vocab:
             continue
 
-        embeddings[word_map[emb_word]] = torch.FloatTensor(embedding)
+        embeddings[word_map[emb_word]] = torch.tensor(embedding, dtype=torch.float)
 
     return embeddings, emb_dim
 
@@ -234,7 +237,7 @@ def save_checkpoint(data_name, epoch, epochs_since_improvement, encoder, decoder
         torch.save(state, 'BEST_' + filename)
 
 
-class AverageMeter(object):
+class AverageMeter:
     """
     Keeps track of most recent, average, sum, and count of a metric.
     """
