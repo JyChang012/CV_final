@@ -10,13 +10,13 @@ from tqdm import tqdm
 from parameters import *
 
 # Parameters
-data_folder = '/media/ssd/caption data'  # folder with data files saved by create_input_files.py
-data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
-checkpoint = '../BEST_checkpoint_coco_5_cap_per_img_5_min_word_freq.pth.tar'  # model checkpoint
-word_map_file = '/media/ssd/caption data/WORDMAP_coco_5_cap_per_img_5_min_word_freq.json'  # word map, ensure it's the same the data was encoded with and the model was trained with
+data_folder = './data/flickr30k_output_5_min_cn'  # folder with data files saved by create_input_files.py
+data_name = 'flickr30k_5_cap_per_img_5_min_word_freq'  # base name shared by data files
+checkpoint = './BEST_checkpoint_flickr30k_5_cap_per_img_1_min_word_freq.pth.tar'  # model checkpoint
+word_map_file = './data/flickr30k_output_5_min_cn/WORDMAP_flickr30k_5_cap_per_img_5_min_word_freq.json'  # word map, ensure it's the same the data was encoded with and the model was trained with
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
 device = torch.device(f'cuda:{gpu_id}' if torch.cuda.is_available() else 'cpu')
-cudnn.benchmark = True  # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
+# cudnn.benchmark = True  # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
 
 # Load model
 checkpoint = torch.load(checkpoint)
@@ -130,6 +130,7 @@ def evaluate(beam_size):
             seqs = torch.cat([seqs[prev_word_inds], next_word_inds.unsqueeze(1)], dim=1)  # (s, step+1)
 
             # Which sequences are incomplete (didn't reach <end>)?
+            print(next_word_inds.shape)
             incomplete_inds = [ind for ind, next_word in enumerate(next_word_inds) if
                                next_word != word_map['<end>']]
             complete_inds = list(set(range(len(next_word_inds))) - set(incomplete_inds))
@@ -178,4 +179,5 @@ def evaluate(beam_size):
 
 if __name__ == '__main__':
     beam_size = 1
-    print("\nBLEU-4 score @ beam size of %d is %.4f." % (beam_size, evaluate(beam_size)))
+    # print("\nBLEU-4 score @ beam size of %d is %.4f." % (beam_size, evaluate(beam_size)))
+    print(f"\nBLEU-4 score @ beam size of {beam_size} is {evaluate(beam_size):.4f}.")

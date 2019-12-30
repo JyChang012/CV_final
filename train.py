@@ -13,13 +13,13 @@ from parameters import *
 from torch.utils.tensorboard import SummaryWriter
 import datetime
 
-record_name = str(datetime.datetime.now()).replace(' ', '_')[:-7]
+record_time = str(datetime.datetime.now()).replace(' ', '_')[:-7]
 
 # Data parameters
-data_folder = './data/flickr30k_output_1_min'  # folder with data files saved by create_input_files.py
-data_name = 'flickr30k_5_cap_per_img_1_min_word_freq'  # base name shared by data files
+data_folder = './data/flickr30k_output_5_min_cn'  # folder with data files saved by create_input_files.py
+data_name = 'flickr30k_5_cap_per_img_5_min_word_freq'  # base name shared by data files
 
-writer = SummaryWriter(f'./logs/{data_name}_{record_name}')
+writer = SummaryWriter(f'./logs/{data_name}_{record_time}_cn')
 
 # Model parameters
 emb_dim = 512  # dimension of word embeddings
@@ -41,10 +41,11 @@ encoder_lr = 2e-4  # learning rate for encoder if fine-tuning, 1e-4
 decoder_lr = 2e-4  # learning rate for decoder, 4e-4
 grad_clip = 5.  # clip gradients at an absolute value of
 alpha_c = 1.  # regularization parameter for 'doubly stochastic attention', as in the paper
-best_bleu4 = 0.  # BLEU-4 score right now
+best_bleu4 = .1438  # BLEU-4 score right now
 print_freq = 400  # print training/validation stats every __ batches
 fine_tune_encoder = True  # fine-tune encoder?
-checkpoint = None  # path to checkpoint, None if none
+checkpoint = './archived_model/flickr30k_cn_no_fine_tune/'\
+             'BEST_checkpoint_flickr30k_5_cap_per_img_5_min_word_freq.pth.tar'  # path to checkpoint, None if none
 
 
 def main():
@@ -86,6 +87,13 @@ def main():
             encoder.fine_tune(fine_tune_encoder)
             encoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, encoder.parameters()),
                                                  lr=encoder_lr)
+        elif fine_tune_encoder is True and encoder_lr is not None:
+            for g in encoder_optimizer.param_groups:
+                g['lr'] = encoder_lr
+
+        if decoder_lr is not None:
+            for g in decoder_optimizer.param_groups:
+                g['lr'] = decoder_lr
 
     # Move to GPU, if available
     decoder = decoder.to(device)
@@ -222,18 +230,17 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
 
         # Print status
         if i % print_freq == 0:
-            print(f'Epoch: [{epoch}][{i}/{len(train_loader)}]\t'
+            print(f'\nEpoch: [{epoch}][{i}/{len(train_loader)}]\t'
                   f'Batch Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   f'Data Load Time {data_time.val:.3f} ({data_time.avg:.3f})\t'
                   f'Loss {losses.val:.4f} ({losses.avg:.4f})\t'
-                  f'Top-5 Accuracy {top5accs.val:.3f} ({top5accs.avg:.3f})')
+                  f'Top-5 Accuracy {top5accs.val:.3f} ({top5accs.avg:.3f})\n')
 
             writer.add_scalar('train_loss_per_step', losses.avg, epoch*len(train_loader)+i)
             writer.add_scalar('train_Top-5_Accuracy_step', top5accs.avg, epoch*len(train_loader)+i)
 
             losses.reset()
             top5accs.reset()
-
 
 
 def validate(val_loader, encoder, decoder, criterion, epoch):
@@ -306,10 +313,10 @@ def validate(val_loader, encoder, decoder, criterion, epoch):
                 #                                                                 batch_time=batch_time,
                 #                                                                 loss=losses, top5=top5accs))
 
-                print(f'Validation: [{i}/{len(val_loader)}]\t'
+                print(f'\nValidation: [{i}/{len(val_loader)}]\t'
                       f'Batch Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       f'Loss {losses.val:.4f} ({losses.avg:.4f})\t'
-                      f'Top-5 Accuracy {top5accs.val:.3f} ({top5accs.avg:.3f})\t')
+                      f'Top-5 Accuracy {top5accs.val:.3f} ({top5accs.avg:.3f})\n')
 
             # Store references (true captions), and hypothesis (prediction) for each image
             # If for n images, we have n hypotheses, and references a, b, c... for each image, we need -

@@ -18,6 +18,8 @@ from parameters import *
 device = torch.device(f'cuda:{gpu_id}' if torch.cuda.is_available() else 'cpu')
 # device = torch.device('cpu')
 
+plt.rcParams["font.family"] = "Noto Sans CJK JP"  # set cjk font
+
 
 def caption_image_beam_search(encoder, decoder, image_path, word_map, beam_size=3):
     """
@@ -307,7 +309,7 @@ def caption_image_beam_search_v2(encoder, decoder, image_path, word_map, beam_si
     return path2rst
 
 
-def visualize_att(image_path, seq, alphas, rev_word_map, smooth=True):
+def visualize_att(image_path, seq, alphas, rev_word_map, smooth=True, save=False):
     """
     Visualizes caption with weights at every word.
 
@@ -322,14 +324,15 @@ def visualize_att(image_path, seq, alphas, rev_word_map, smooth=True):
     image = Image.open(image_path)
     image = image.resize([14 * 24, 14 * 24], Image.LANCZOS)
 
-    words = [rev_word_map[ind] for ind in seq]
+    words = [rev_word_map[ind] for ind in seq]  # list of words
 
     for t in range(len(words)):
         if t > 50:
             break
         plt.subplot(np.ceil(len(words) / 5.), 5, t + 1)
 
-        plt.text(0, 1, '%s' % (words[t]), color='black', backgroundcolor='white', fontsize=12)
+        # plt.text(0, 1, '%s' % (words[t]), color='black', backgroundcolor='white', fontsize=12)
+        plt.title(words[t])
         plt.imshow(image)
         current_alpha = alphas[t, :]
         if smooth:
@@ -342,7 +345,11 @@ def visualize_att(image_path, seq, alphas, rev_word_map, smooth=True):
             plt.imshow(alpha, alpha=0.8)
         plt.set_cmap(cm.Greys_r)
         plt.axis('off')
-    # plt.savefig(f'caption_{os.path.split(args.img)[-1]}')
+    if save == 'default':
+        name = os.path.split(image_path)[-1]
+        plt.savefig(f'caption_{name}')
+    elif save:
+        plt.savefig(save)
     plt.show()
 
 
@@ -367,6 +374,7 @@ if __name__ == '__main__':
     parser.add_argument('--beam_size', '-b', default=5, type=int, help='beam size for beam search')
     parser.add_argument('--dont_smooth', dest='smooth', action='store_false', help='do not smooth alpha overlay')
     parser.add_argument('--visualize', '-v', action='store_true', help='whether to visualize attention of each word')
+    parser.add_argument('--save', '-s', help='whether to save the output as file')
 
     args = parser.parse_args()
 
@@ -395,9 +403,15 @@ if __name__ == '__main__':
         for path in path2rst:
             seq, alphas = path2rst[path]
             alphas = torch.tensor(alphas, dtype=torch.float)
-            visualize_att(path, seq, alphas, rev_word_map, args.smooth)
+            visualize_att(path, seq, alphas, rev_word_map, args.smooth, args.save)
     else:
+        seqs = []
         for path in path2rst:
             seq, _ = path2rst[path]
-            print(f'{os.path.split(path)[-1]}: {idx2seq(seq[1:-1])}')
-
+            line = f'{os.path.split(path)[-1]}: {idx2seq(seq[1:-1])}'
+            print(line)
+            seqs.append(line)
+        if args.save:
+            with open(args.save, 'w') as f:
+                f.write('\n'.join(seqs))
+            print(f'output has been saved to {args.save}!')

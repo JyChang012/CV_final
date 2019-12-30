@@ -24,7 +24,9 @@ def create_input_files(dataset, karpathy_json_path, image_folder, captions_per_i
     :param max_len: don't sample captions longer than this length
     """
 
-    assert dataset in {'coco', 'flickr8k', 'flickr30k'}
+    # assert dataset in {'coco', 'flickr8k', 'flickr30k'}
+    assert any(name in dataset for name in ('coco', 'flickr8k', 'flickr30k'))
+    ensure_ascii = False if output_folder[-2:] == 'cn' else True
 
     # Read Karpathy JSON
     with open(karpathy_json_path, 'r') as j:
@@ -80,8 +82,11 @@ def create_input_files(dataset, karpathy_json_path, image_folder, captions_per_i
     base_filename = dataset + '_' + str(captions_per_image) + '_cap_per_img_' + str(min_word_freq) + '_min_word_freq'
 
     # Save word map to a JSON
+    if not os.path.isdir(os.path.join(output_folder)):
+        os.mkdir(os.path.join(output_folder))
+
     with open(os.path.join(output_folder, 'WORDMAP_' + base_filename + '.json'), 'w') as j:
-        json.dump(word_map, j)
+        json.dump(word_map, j, ensure_ascii=ensure_ascii)
 
     # Sample captions for each image, save images to HDF5 file, and captions and their lengths to JSON files
     seed(123)
@@ -142,7 +147,7 @@ def create_input_files(dataset, karpathy_json_path, image_folder, captions_per_i
 
             # Save encoded captions and their lengths to JSON files
             with open(os.path.join(output_folder, split + '_CAPTIONS_' + base_filename + '.json'), 'w') as j:
-                json.dump(enc_captions, j)
+                json.dump(enc_captions, j, ensure_ascii=ensure_ascii)
 
             with open(os.path.join(output_folder, split + '_CAPLENS_' + base_filename + '.json'), 'w') as j:
                 json.dump(caplens, j)

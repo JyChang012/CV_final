@@ -1,1 +1,1 @@
-gpu_id = 1
+gpu_id = 0
